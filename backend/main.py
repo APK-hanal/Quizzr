@@ -7,16 +7,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend.pdf_parser import extract_text_from_pdf
-from backend.question_generator import analyze_pdf_content, generate_ai_questions
+from backend.question_generator import analyze_pdf_content, generate_ai_questions_async
 
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
-UPLOAD_DIR = BASE_DIR / "uploads"
-UPLOAD_DIR.mkdir(exist_ok=True)
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
+EXCERPT_LIMIT = 12000
 
 app = FastAPI(title="Quizzr", version="1.0.0")
 
@@ -65,7 +64,8 @@ async def analyze_pdf(
 
     analysis = analyze_pdf_content(text)
     question_count = max(5, min(20, question_count))
-    questions = generate_ai_questions(
+
+    questions, used_ai = await generate_ai_questions_async(
         text=text,
         topics=analysis["topics"],
         count=question_count,
@@ -78,8 +78,28 @@ async def analyze_pdf(
         "word_count": analysis["word_count"],
         "estimated_questions": analysis["estimated_questions"],
         "question_count": len(questions),
-        "ai_mode": "openai" if os.getenv("OPENAI_API_KEY") else "local",
+        "ai_mode": "openai" if used_ai else "local",
+        "truncated": len(text) > EXCERPT_LIMIT,
         "questions": questions,
+    }
+
+
+@app.post("/api/check-answer")
+async def check_answer(
+    selected_index: int = Form(...),
+    correct_index: int = Form(...),
+    explanation: str = Form(""),
+    misconception: str = Form(""),
+):
+    """
+    Frontend calls this per-question after the user picks an answer.
+    Keeps the misconception-correction logic server-side and centralized,
+    so the demo can show 'here's the misconception you fell for' live.
+    """
+    is_correct = selected_index == correct_index
+    return {
+        "is_correct": is_correct,
+        "feedback": explanation if is_correct else misconception,
     }
 
 

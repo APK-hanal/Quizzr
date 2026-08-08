@@ -451,3 +451,71 @@ async def generate_summary_async(text: str, topics: list[str]) -> tuple[dict[str
 
     return cleaned, True
 
+def _difficulty_split(total: int, ratios: dict[str, float]) -> dict[str, int]:
+    """Split total into per-difficulty counts based on ratios, no question lost to rounding."""
+    raw = {k: total * v for k, v in ratios.items()}
+    counts = {k: int(v) for k, v in raw.items()}
+    remainder = total - sum(counts.values())
+    # Give leftover questions to whichever buckets rounded down the most.
+    remainders = sorted(ratios.keys(), key=lambda k: raw[k] - counts[k], reverse=True)
+    for i in range(remainder):
+        counts[remainders[i % len(remainders)]] += 1
+    return counts
+
+
+async def generate_teacher_quiz_pool(
+    text: str,
+    topics: list[str],
+    total_count: int = 10,
+    ratios: dict[str, float] | None = None,
+) -> tuple[list[dict], bool]:
+    """
+    Generates a master pool of questions matching a difficulty distribution
+    (default 40% easy / 40% medium / 20% hard). Calls the existing generator
+    once per difficulty bucket so each bucket is reliably filled, instead of
+    generating mixed and hoping the ratio lands right.
+    """
+    ratios = ratios or {"easy": 0.4, "medium": 0.4, "hard": 0.2}
+    counts = _difficulty_split(total_count, ratios)
+
+    pool: list[dict] = []
+    any_ai = False
+    for diff, n in counts.items():
+        if n <= 0:
+            continue
+        questions, used_ai = await generate_ai_questions_async(text, topics, count=n, difficulty=diff)
+        pool.extend(questions)
+        any_ai = any_ai or used_ai
+
+    return pool, any_ai
+
+
+def _shuffle_question_options(question: dict, rng: random.Random) -> dict:
+    """Returns a copy of the question with options shuffled and correct_index remapped."""
+    options = list(question["options"])
+    correct_option = options[question["correct_index"]]
+    indices = list(range(len(options)))
+    rng.shuffle(indices)
+    new_options = [options[i] for i in indices]
+    new_correct_index = new_options.index(correct_option)
+
+    new_q = dict(question)
+    new_q["options"] = new_options
+    new_q["correct_index"] = new_correct_index
+    return new_q
+
+
+def build_quiz_versions(pool: list[dict], version_labels: list[str], seed_base: int = 42) -> dict[str, list[dict]]:
+    """
+    Builds N versions (e.g. A/B/C) from the same question pool: each version
+    gets the questions in a different order, and each question's options
+    shuffled independently, so no two versions look identical to students
+    sitting next to each other.
+    """
+    versions: dict[str, list[dict]] = {}
+    for i, label in enumerate(version_labels):
+        rng = random.Random(seed_base + i)
+        shuffled_order = pool[:]
+        rng.shuffle(shuffled_order)
+        versions[label] = [_shuffle_question_options(q, rng) for q in shuffled_order]
+    return versions

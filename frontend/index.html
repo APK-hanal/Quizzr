@@ -16,11 +16,11 @@
             <a href="#" class="logo" onclick="showPage('home')">
                 <img src="logo.png" width="120">
             </a>
-        <nav class="nav">
-        <button class="nav-btn active" data-page="home" onclick="showPage('home')">Home</button>
-        <button class="nav-btn" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
-        <button class="nav-btn" data-page="upload" onclick="showPage('upload')">Upload</button>
-    </nav>
+            <nav class="nav">
+                <button class="nav-btn active" data-page="home" onclick="showPage('home')">Home</button>
+                <button class="nav-btn" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
+                <button class="nav-btn" data-page="upload" onclick="showPage('upload')">Upload</button>
+            </nav>
         </div>
     </header>
 
@@ -120,18 +120,20 @@
             </div>
         </section>
     </main>
+
     <!-- ===== PAGE: DASHBOARD ===== -->
     <div id="page-dashboard" class="page">
-    <div class="container" style="max-width: 900px;">
-        <div class="page-header">
-            <h1>📊 Dashboard</h1>
-            <p>Your quiz history and topic performance across all PDFs</p>
-        </div>
-        <div id="dashboard-content">
-            <!-- Rendered by JS -->
+        <div class="container" style="max-width: 900px;">
+            <div class="page-header">
+                <h1>📊 Dashboard</h1>
+                <p>Your quiz history and topic performance across all PDFs</p>
+            </div>
+            <div id="dashboard-content">
+                <!-- Rendered by JS -->
+            </div>
         </div>
     </div>
-    </div>
+
     <!-- ===== PAGE: UPLOAD ===== -->
     <div id="page-upload" class="page">
         <div class="container" style="max-width: 800px;">
@@ -159,9 +161,6 @@
 
             <div id="error-message" class="error-message" style="display:none;"></div>
 
-            <!-- Question count / difficulty pickers moved here, BEFORE the API call fires.
-                 This is the fix for the bug where selections made on the quiz-setup page
-                 arrived too late to affect the already-completed /api/analyze request. -->
             <div class="setup-controls" style="margin-top: 24px;">
                 <div class="setup-control">
                     <label>Number of Questions</label>
@@ -192,6 +191,48 @@
                 </button>
             </div>
 
+            <!-- Teacher mode -->
+            <div style="margin-top: 24px; text-align: center;">
+                <label style="display:inline-flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
+                    <input type="checkbox" id="teacher-toggle" onchange="toggleTeacherMode()" />
+                    👩‍🏫 I'm a teacher
+                </label>
+            </div>
+
+            <div id="teacher-controls" style="display:none; margin-top: 16px; text-align: center;">
+                <div class="setup-control" style="display:flex; flex-direction:column; align-items:center; margin-bottom: 20px;">
+                    <label>Number of Questions</label>
+                    <div class="setup-options" id="teacher-count-options">
+                        <button class="setup-option" data-value="5">5</button>
+                        <button class="setup-option selected" data-value="10">10</button>
+                        <button class="setup-option" data-value="15">15</button>
+                        <button class="setup-option" data-value="20">20</button>
+                    </div>
+                </div>
+                <div class="setup-control" style="display:flex; flex-direction:column; align-items:center; margin-bottom: 20px;">
+                    <label>Difficulty Split (Easy / Medium / Hard %)</label>
+                    <div style="display:flex; gap:8px; align-items:center; justify-content:center; margin-top: 8px;">
+                        <input type="number" id="easy-pct" value="40" min="0" max="100" style="width:70px; padding:8px; border-radius:8px; border:1px solid #E2E8F0; text-align:center;" />
+                        <input type="number" id="medium-pct" value="40" min="0" max="100" style="width:70px; padding:8px; border-radius:8px; border:1px solid #E2E8F0; text-align:center;" />
+                        <input type="number" id="hard-pct" value="20" min="0" max="100" style="width:70px; padding:8px; border-radius:8px; border:1px solid #E2E8F0; text-align:center;" />
+                    </div>
+                    <p style="font-size:12px; color:#94A3B8; margin-top:4px;">Must sum to 100</p>
+                </div>
+                <div class="setup-control" style="display:flex; flex-direction:column; align-items:center; margin-bottom: 20px;">
+                    <label>Number of Versions</label>
+                    <div class="setup-options" id="version-count-options">
+                        <button class="setup-option selected" data-value="1">1</button>
+                        <button class="setup-option" data-value="2">2 (A/B)</button>
+                        <button class="setup-option" data-value="3">3 (A/B/C)</button>
+                    </div>
+                </div>
+                <div style="text-align:center; margin-top:16px;">
+                    <button id="teacher-generate-btn" class="btn-primary" onclick="generateTeacherQuiz()" disabled style="padding: 14px 48px; font-size: 16px;">
+                        Generate Teacher Quiz 📋
+                    </button>
+                </div>
+            </div>
+
             <!-- Analyzing / Summarizing State (shared) -->
             <div id="analyzing-state" class="analyzing-state" style="display:none; margin-top: 24px;">
                 <div class="spinner"></div>
@@ -201,9 +242,20 @@
                     <!-- Steps will be rendered by JS -->
                 </div>
             </div>
+        </div>
+    </div>
 
-            <!-- Info Box -->
-            
+    <!-- ===== PAGE: TEACHER QUIZ ===== -->
+    <div id="page-teacher-quiz" class="page">
+        <div class="container" style="max-width: 900px;">
+            <button class="back-btn" onclick="showPage('upload')">← Back</button>
+            <div class="page-header">
+                <h1>📋 Teacher Quiz Output</h1>
+                <p id="teacher-quiz-doc-name">Uploaded PDF</p>
+            </div>
+            <div id="teacher-quiz-content">
+                <!-- Rendered by JS -->
+            </div>
         </div>
     </div>
 

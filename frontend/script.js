@@ -72,7 +72,6 @@ function setupUpload() {
         if (file) handleFileSelect(file);
     });
 }
-
 function handleFileSelect(file) {
     hideError();
 
@@ -94,6 +93,7 @@ function handleFileSelect(file) {
     document.getElementById("upload-area").classList.add("has-file");
     document.getElementById("analyze-btn").disabled = false;
     document.getElementById("summarize-btn").disabled = false;
+    document.getElementById("teacher-generate-btn").disabled = false;
 }
 
 function removeFile() {
@@ -104,9 +104,9 @@ function removeFile() {
     document.getElementById("upload-area").classList.remove("has-file");
     document.getElementById("analyze-btn").disabled = true;
     document.getElementById("summarize-btn").disabled = true;
+    document.getElementById("teacher-generate-btn").disabled = true;
     hideError();
 }
-
 function setupSetupOptions() {
     bindOptionGroup("question-count-options", (value) => {
         state.questionCount = Number(value);
@@ -640,6 +640,138 @@ function escapeHtml(value) {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+}
+function toggleTeacherMode() {
+    const isTeacher = document.getElementById("teacher-toggle").checked;
+    document.getElementById("teacher-controls").style.display = isTeacher ? "block" : "none";
+    bindOptionGroup("teacher-count-options", () => {});
+    bindOptionGroup("version-count-options", () => {});
+}
+
+async function generateTeacherQuiz() {
+    if (!state.selectedFile) return;
+
+    hideError();
+    const questionCount = Number(document.querySelector("#teacher-count-options .selected")?.dataset.value || 10);
+    const numVersions = Number(document.querySelector("#version-count-options .selected")?.dataset.value || 1);
+    const easyPct = Number(document.getElementById("easy-pct").value);
+    const mediumPct = Number(document.getElementById("medium-pct").value);
+    const hardPct = Number(document.getElementById("hard-pct").value);
+
+    if (easyPct + mediumPct + hardPct !== 100) {
+        showError("Difficulty percentages must sum to 100.");
+        return;
+    }
+
+    document.getElementById("teacher-generate-btn").disabled = true;
+    document.getElementById("analyzing-title").textContent = "Generating teacher quiz...";
+    document.getElementById("analyzing-subtitle").textContent = "Building question versions and answer keys";
+    document.getElementById("analyzing-state").style.display = "block";
+    renderSteps(["Reading PDF content", "Generating questions", "Building versions"], 1);
+
+    const formData = new FormData();
+    formData.append("file", state.selectedFile);
+    formData.append("question_count", String(questionCount));
+    formData.append("num_versions", String(numVersions));
+    formData.append("easy_pct", String(easyPct));
+    formData.append("medium_pct", String(mediumPct));
+    formData.append("hard_pct", String(hardPct));
+
+    try {
+        const response = await fetch(`${API_BASE}/api/teacher-quiz`, {
+            method: "POST",
+            body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to generate teacher quiz.");
+        }
+        showTeacherQuiz(data);
+    } catch (error) {
+        showError(error.message || "Something went wrong generating the teacher quiz.");
+    } finally {
+        document.getElementById("analyzing-state").style.display = "none";
+        document.getElementById("teacher-generate-btn").disabled = false;
+    }
+}
+
+function showTeacherQuiz(data) {
+    showPage("teacher-quiz");
+    document.getElementById("teacher-quiz-doc-name").textContent = data.document_name || "Uploaded PDF";
+
+    const versionEntries = Object.entries(data.versions);
+    const letters = ["A", "B", "C", "D"];
+
+    const versionsHtml = versionEntries.map(([label, questions]) => {
+        const quizText = questions.map((q, i) =>
+            `${i + 1}. ${q.question}\n` +
+            q.options.map((opt, oi) => `   ${letters[oi]}) ${opt}`).join("\n")
+        ).join("\n\n");
+
+        const answerKeyText = questions.map((q, i) =>
+            `${i + 1}. ${letters[q.correct_index]}`
+        ).join("   ");
+
+        const questionsHtml = questions.map((q, i) => `
+            <div class="question-card" style="margin-bottom: 16px;">
+                <div class="question-meta">
+                    <span class="question-number">Q${i + 1}</span>
+                    <span class="question-difficulty ${q.difficulty}">${q.difficulty}</span>
+                </div>
+                <div class="question-text">${escapeHtml(q.question)}</div>
+                <div class="options">
+                    ${q.options.map((opt, oi) => `
+                        <div class="option ${oi === q.correct_index ? "correct" : ""}" style="cursor:default;">
+                            <span class="option-letter">${letters[oi]}</span>
+                            <span>${escapeHtml(opt)}</span>
+                        </div>
+                    `).join("")}
+                </div>
+            </div>
+        `).join("");
+
+        return `
+            <div style="margin-bottom: 32px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                    <h2>Version ${label}</h2>
+                    <button class="btn-secondary" onclick="copyQuizText('${label}')">📋 Copy for Google Forms</button>
+                </div>
+                <textarea id="quiz-text-${label}" style="display:none;">${escapeHtml(quizText)}\n\nAnswer Key: ${escapeHtml(answerKeyText)}</textarea>
+                ${questionsHtml}
+                <div class="topics-list">
+                    <h3>Answer Key</h3>
+                    <p style="font-family: monospace; font-size: 15px;">${escapeHtml(answerKeyText)}</p>
+                </div>
+            </div>
+        `;
+    }).join("<hr style='margin: 32px 0; border: none; border-top: 1px solid #E2E8F0;' />");
+
+    document.getElementById("teacher-quiz-content").innerHTML = `
+        <div class="setup-stats" style="margin-bottom: 24px;">
+            <div class="setup-stat blue">
+                <div class="setup-stat-label">Questions per Version</div>
+                <div class="setup-stat-value">${data.question_count}</div>
+            </div>
+            <div class="setup-stat pink">
+                <div class="setup-stat-label">Versions</div>
+                <div class="setup-stat-value">${versionEntries.length}</div>
+            </div>
+            <div class="setup-stat orange">
+                <div class="setup-stat-label">Mode</div>
+                <div class="setup-stat-value" style="font-size:16px;">${data.ai_mode === "openai" ? "AI" : "Local"}</div>
+            </div>
+        </div>
+        ${versionsHtml}
+    `;
+}
+
+function copyQuizText(label) {
+    const textarea = document.getElementById(`quiz-text-${label}`);
+    textarea.style.display = "block";
+    textarea.select();
+    document.execCommand("copy");
+    textarea.style.display = "none";
+    alert(`Version ${label} copied — paste into Google Forms or a document.`);
 }
 
 function wait(ms) {

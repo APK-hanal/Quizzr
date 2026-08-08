@@ -16,10 +16,11 @@
             <a href="#" class="logo" onclick="showPage('home')">
                 <img src="logo.png" width="120">
             </a>
-            <nav class="nav">
-                <button class="nav-btn active" data-page="home" onclick="showPage('home')">Home</button>
-                <button class="nav-btn" data-page="upload" onclick="showPage('upload')">Upload</button>
-            </nav>
+        <nav class="nav">
+        <button class="nav-btn active" data-page="home" onclick="showPage('home')">Home</button>
+        <button class="nav-btn" data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
+        <button class="nav-btn" data-page="upload" onclick="showPage('upload')">Upload</button>
+    </nav>
         </div>
     </header>
 
@@ -119,7 +120,18 @@
             </div>
         </section>
     </main>
-
+    <!-- ===== PAGE: DASHBOARD ===== -->
+    <div id="page-dashboard" class="page">
+    <div class="container" style="max-width: 900px;">
+        <div class="page-header">
+            <h1>📊 Dashboard</h1>
+            <p>Your quiz history and topic performance across all PDFs</p>
+        </div>
+        <div id="dashboard-content">
+            <!-- Rendered by JS -->
+        </div>
+    </div>
+    </div>
     <!-- ===== PAGE: UPLOAD ===== -->
     <div id="page-upload" class="page">
         <div class="container" style="max-width: 800px;">

@@ -9,8 +9,8 @@ const state = {
     questionCount: 10,
     difficulty: "mixed",
     summaryData: null,
+    quizHistory: JSON.parse(localStorage.getItem("quizHistory") || "[]"),
 };
-
 const ANALYSIS_STEPS = [
     "Reading PDF content",
     "Identifying key topics",
@@ -29,6 +29,12 @@ document.addEventListener("DOMContentLoaded", () => {
     setupSetupOptions();
 });
 
+document.addEventListener("DOMContentLoaded", () => {
+    setupUpload();
+    setupSetupOptions();
+    renderDashboard();
+});
+
 function showPage(pageId) {
     document.querySelectorAll(".page").forEach((page) => page.classList.remove("active"));
     document.querySelectorAll(".nav-btn").forEach((btn) => {
@@ -37,6 +43,8 @@ function showPage(pageId) {
 
     const page = document.getElementById(`page-${pageId}`);
     if (page) page.classList.add("active");
+
+    if (pageId === "dashboard") renderDashboard();
 }
 
 function setupUpload() {
@@ -380,6 +388,7 @@ function nextQuestion() {
     }
     showResults();
 }
+
 function showResults() {
     const correctCount = state.answers.filter((answer) => answer.isCorrect).length;
     const total = state.answers.length;
@@ -407,12 +416,19 @@ function showResults() {
     const moderateTopics = topicBreakdown.filter((t) => t.strength === "moderate");
 
     const result = {
+        id: Date.now(),
         documentName: state.quizData?.document_name || "Uploaded PDF",
         score,
         correctCount,
         total,
         topics: state.quizData?.topics || [],
+        topicBreakdown,
+        date: new Date().toISOString(),
     };
+
+    state.quizHistory.unshift(result);
+    state.quizHistory = state.quizHistory.slice(0, 20);
+    localStorage.setItem("quizHistory", JSON.stringify(state.quizHistory));
 
     showPage("results");
     document.getElementById("results-doc-name").textContent = result.documentName;
@@ -475,9 +491,126 @@ function showResults() {
         <div class="results-actions">
             <button class="btn-primary" onclick="startQuiz()">Retry Quiz</button>
             <button class="btn-secondary" onclick="showPage('upload')">Upload New PDF</button>
+            <button class="btn-secondary" onclick="showPage('dashboard')">View Dashboard</button>
         </div>
     `;
 }
+function renderDashboard() {
+    const container = document.getElementById("dashboard-content");
+    if (!container) return;
+
+    if (!state.quizHistory.length) {
+        container.innerHTML = `
+            <div class="dashboard-empty">
+                <div class="dashboard-empty-icon">📚</div>
+                <h3>No quizzes yet</h3>
+                <p>Upload a PDF to generate your first AI-powered quiz.</p>
+                <button class="btn-primary" onclick="showPage('upload')">Upload PDF</button>
+            </div>
+        `;
+        return;
+    }
+
+    const totalQuizzes = state.quizHistory.length;
+    const avgScore = Math.round(
+        state.quizHistory.reduce((sum, item) => sum + item.score, 0) / totalQuizzes
+    );
+    const totalCorrect = state.quizHistory.reduce((sum, item) => sum + item.correctCount, 0);
+    const totalQuestions = state.quizHistory.reduce((sum, item) => sum + item.total, 0);
+
+    // Aggregate topic accuracy across all quizzes, not just per-quiz.
+    const topicAgg = {};
+    state.quizHistory.forEach((item) => {
+        (item.topicBreakdown || []).forEach(({ topic, correct, total }) => {
+            if (!topicAgg[topic]) topicAgg[topic] = { correct: 0, total: 0 };
+            topicAgg[topic].correct += correct;
+            topicAgg[topic].total += total;
+        });
+    });
+
+    const topicList = Object.entries(topicAgg).map(([topic, stats]) => {
+        const pct = Math.round((stats.correct / stats.total) * 100);
+        let strength;
+        if (pct >= 70) strength = "strong";
+        else if (pct < 50) strength = "weak";
+        else strength = "moderate";
+        return { topic, ...stats, pct, strength };
+    });
+
+    const strongTopics = topicList.filter((t) => t.strength === "strong").sort((a, b) => b.pct - a.pct).slice(0, 8);
+    const weakTopics = topicList.filter((t) => t.strength === "weak").sort((a, b) => a.pct - b.pct).slice(0, 8);
+
+    container.innerHTML = `
+        <div class="setup-stats" style="margin-bottom: 24px;">
+            <div class="setup-stat blue">
+                <div class="setup-stat-label">Quizzes Taken</div>
+                <div class="setup-stat-value">${totalQuizzes}</div>
+            </div>
+            <div class="setup-stat green">
+                <div class="setup-stat-label">Avg Score</div>
+                <div class="setup-stat-value">${avgScore}%</div>
+            </div>
+            <div class="setup-stat pink">
+                <div class="setup-stat-label">Questions Answered</div>
+                <div class="setup-stat-value">${totalQuestions}</div>
+            </div>
+            <div class="setup-stat orange">
+                <div class="setup-stat-label">Total Correct</div>
+                <div class="setup-stat-value">${totalCorrect}</div>
+            </div>
+        </div>
+
+        ${weakTopics.length ? `
+        <div class="topics-list" style="margin-bottom: 24px;">
+            <h3>⚠️ Weakest Topics (across all quizzes)</h3>
+            <div class="topic-tags">
+                ${weakTopics.map((t) => `
+                    <span class="topic-tag" style="background:#FEE2E2; color:#991B1B;">
+                        ${escapeHtml(t.topic)} — ${t.correct}/${t.total} (${t.pct}%)
+                    </span>
+                `).join("")}
+            </div>
+        </div>` : ""}
+
+        ${strongTopics.length ? `
+        <div class="topics-list" style="margin-bottom: 24px;">
+            <h3>💪 Strongest Topics (across all quizzes)</h3>
+            <div class="topic-tags">
+                ${strongTopics.map((t) => `
+                    <span class="topic-tag" style="background:#DCFCE7; color:#166534;">
+                        ${escapeHtml(t.topic)} — ${t.correct}/${t.total} (${t.pct}%)
+                    </span>
+                `).join("")}
+            </div>
+        </div>` : ""}
+
+        <h3 style="margin-bottom:12px;">Quiz History</h3>
+        <div class="dashboard-grid">
+            ${state.quizHistory
+                .map((item) => {
+                    const badgeClass = item.score >= 80 ? "good" : item.score >= 50 ? "ok" : "poor";
+                    return `
+                        <div class="dashboard-card">
+                            <div class="dashboard-card-header">
+                                <div class="dashboard-card-icon">📄</div>
+                                <div>
+                                    <div class="dashboard-card-title">${escapeHtml(item.documentName)}</div>
+                                    <div class="dashboard-card-meta">${new Date(item.date).toLocaleString()}</div>
+                                </div>
+                            </div>
+                            <div class="dashboard-card-score">
+                                <span>${item.correctCount}/${item.total} correct</span>
+                                <span class="dashboard-score-badge ${badgeClass}">${item.score}%</span>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join("")}
+        </div>
+    `;
+}
+
+
 function confirmExit() {
     if (confirm("Exit quiz? Your current progress will be lost.")) {
         showPage("upload");

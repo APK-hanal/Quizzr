@@ -32,7 +32,7 @@ app.add_middleware(
 def health_check():
     return {
         "status": "ok",
-        "ai_enabled": bool(os.getenv("OPENAI_API_KEY")),
+        "ai_enabled": bool(os.getenv("GEMINI_API_KEY")),
     }
 
 

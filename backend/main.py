@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.pdf_parser import extract_text_from_pdf
 from backend.question_generator import analyze_pdf_content, generate_ai_questions_async
+from backend.question_generator import analyze_pdf_content, generate_ai_questions_async, generate_summary_async
+
 
 load_dotenv()
 
@@ -102,6 +104,41 @@ async def check_answer(
         "feedback": explanation if is_correct else misconception,
     }
 
+
+
+@app.post("/api/summarize")
+async def summarize_pdf(file: UploadFile = File(...)):
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF file.")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File size must be under 10MB.")
+
+    try:
+        text = extract_text_from_pdf(file_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read PDF: {exc}") from exc
+
+    if len(text.strip()) < 50:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough readable text found in this PDF. Try a text-based PDF.",
+        )
+
+    analysis = analyze_pdf_content(text)
+    summary, used_ai = await generate_summary_async(text, analysis["topics"])
+
+    return {
+        "document_name": file.filename,
+        "topics": analysis["topics"],
+        "word_count": analysis["word_count"],
+        "ai_mode": "openai" if used_ai else "local",
+        "truncated": len(text) > EXCERPT_LIMIT,
+        "summary": summary,
+    }
 
 if FRONTEND_DIR.exists():
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

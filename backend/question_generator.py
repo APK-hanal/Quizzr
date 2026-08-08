@@ -235,7 +235,6 @@ def _extract_json(raw: str) -> dict:
 def _get_gemini_client(api_key: str) -> genai.Client:
     return genai.Client(api_key=api_key)
 
-
 async def generate_ai_questions_async(
     text: str,
     topics: list[str],
@@ -263,10 +262,12 @@ async def generate_ai_questions_async(
         else "General concepts from the document"
     )
 
+    request_count = count if difficulty == "mixed" else min(count * 2, 30)
+
     prompt = _build_prompt(
         excerpt=excerpt,
         topic_list=topic_list,
-        count=count,
+        count=request_count,
         difficulty=difficulty,
     )
 
@@ -314,9 +315,9 @@ async def generate_ai_questions_async(
             False,
         )
 
-    result = _filter_by_difficulty(cleaned, difficulty)[:count]
+    filtered = _filter_by_difficulty(cleaned, difficulty)[:count]
 
-    if not result:
+    if not filtered:
         return (
             generate_local_questions(
                 text=text,
@@ -327,8 +328,20 @@ async def generate_ai_questions_async(
             False,
         )
 
-    return result, True
+    if len(filtered) < count:
+        shortfall = count - len(filtered)
+        padding = generate_local_questions(
+            text=text,
+            topics=topics,
+            count=shortfall,
+            difficulty="mixed",
+        )
+        for q in padding:
+            if difficulty != "mixed":
+                q["difficulty"] = difficulty
+        filtered.extend(padding)
 
+    return filtered[:count], True
 
 def analyze_pdf_content(text: str) -> dict[str, Any]:
     topics = extract_topics(text)
@@ -343,3 +356,98 @@ def analyze_pdf_content(text: str) -> dict[str, Any]:
         "word_count": word_count,
         "estimated_questions": estimated_questions,
     }
+
+def _build_summary_prompt(excerpt: str, topic_list: str) -> str:
+    return f"""
+You are an educational assistant. Read the PDF excerpt and produce a clear,
+well-structured summary for a student studying this material.
+
+Topics identified: {topic_list}
+
+Return ONLY valid JSON, no markdown fences, no preamble, in this exact shape:
+{{
+  "overview": "string - 2-3 sentence high-level summary of the whole document",
+  "key_points": ["string", "string", ...],
+  "definitions": [
+    {{"term": "string", "definition": "string"}}
+  ]
+}}
+
+Rules:
+- overview: 2-3 sentences, plain language, no jargon unless defined.
+- key_points: 5-8 bullet points, each one specific fact/concept from the excerpt, one sentence each.
+- definitions: up to 6 important terms from the excerpt with a one-sentence definition each. Omit if the excerpt has no clear technical terms.
+- Base everything strictly on the excerpt content, do not invent facts.
+- Return ONLY the JSON object, nothing else.
+
+PDF excerpt:
+{excerpt}
+"""
+
+
+def _clean_summary(payload: dict) -> dict[str, Any]:
+    overview = str(payload.get("overview", "")).strip()
+    key_points = [
+        str(p).strip() for p in payload.get("key_points", [])
+        if str(p).strip()
+    ][:8]
+    definitions = [
+        {"term": str(d.get("term", "")).strip(), "definition": str(d.get("definition", "")).strip()}
+        for d in payload.get("definitions", [])
+        if str(d.get("term", "")).strip() and str(d.get("definition", "")).strip()
+    ][:6]
+    return {"overview": overview, "key_points": key_points, "definitions": definitions}
+
+
+def generate_local_summary(text: str, topics: list[str]) -> dict[str, Any]:
+    """Fallback when no AI key is set or the AI call fails."""
+    chunks = split_into_chunks(text)
+    overview = chunks[0][:280] + ("..." if chunks and len(chunks[0]) > 280 else "") if chunks else "No readable content found."
+    key_points = [c[:150] + ("..." if len(c) > 150 else "") for c in chunks[1:7]]
+    return {
+        "overview": overview,
+        "key_points": key_points,
+        "definitions": [{"term": t, "definition": "Mentioned as a key topic in this document."} for t in topics[:6]],
+    }
+
+
+async def generate_summary_async(text: str, topics: list[str]) -> tuple[dict[str, Any], bool]:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return generate_local_summary(text, topics), False
+
+    excerpt = text[:12000]
+    topic_list = ", ".join(topics) if topics else "General concepts from the document"
+    prompt = _build_summary_prompt(excerpt, topic_list)
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
+
+    try:
+        client = _get_gemini_client(api_key)
+        response = await asyncio.wait_for(
+            asyncio.to_thread(
+                client.models.generate_content,
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.2,
+                ),
+            ),
+            timeout=25,
+        )
+        response_text = response.text
+        if not response_text:
+            raise ValueError("Gemini returned an empty response")
+
+        payload = _extract_json(response_text)
+        cleaned = _clean_summary(payload)
+
+    except Exception as exc:
+        print(f"[Summary generation failed, falling back to local]: {exc}")
+        return generate_local_summary(text, topics), False
+
+    if not cleaned["overview"] and not cleaned["key_points"]:
+        return generate_local_summary(text, topics), False
+
+    return cleaned, True
+

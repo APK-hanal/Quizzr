@@ -14,12 +14,12 @@
     <header class="header">
         <div class="container header-inner">
             <a href="#" class="logo" onclick="showPage('home')">
-                <img src="logo.jpeg" width="120">
+                <img src="logo.png" width="120">
             </a>
             <nav class="nav">
                 <button class="nav-btn active" data-page="home" onclick="showPage('home')">Home</button>
                 <button class="nav-btn" data-page="upload" onclick="showPage('upload')">Upload</button>
-                </nav>
+            </nav>
         </div>
     </header>
 
@@ -61,13 +61,13 @@
                             <div class="hero-card-item purple">
                                 <div class="hero-card-icon purple">📄</div>
                                 <div class="hero-card-text">
-                                    <h4>Biology Chapter 4.pdf</h4>
+                                    <h4>Computer Chapter 4.pdf</h4>
                                     <p>2.4 MB</p>
                                 </div>
                                 <span class="hero-card-arrow">→</span>
                             </div>
                             <div class="hero-card-item pink">
-                                <div class="hero-card-icon pink">✨</div>
+                                <div class="hero-card-icon pink">🤖</div>
                                 <div class="hero-card-text">
                                     <h4>AI Analysis</h4>
                                     <p>Processing...</p>
@@ -79,7 +79,7 @@
                                 </div>
                             </div>
                             <div class="hero-card-item green">
-                                <div class="hero-card-icon green">⭐</div>
+                                <div class="hero-card-icon green">⁉️</div>
                                 <div class="hero-card-text">
                                     <h4>Quiz Generated</h4>
                                     <p>10 questions • Mixed difficulty</p>
@@ -147,29 +147,51 @@
 
             <div id="error-message" class="error-message" style="display:none;"></div>
 
-            <div class="upload-actions">
+            <!-- Question count / difficulty pickers moved here, BEFORE the API call fires.
+                 This is the fix for the bug where selections made on the quiz-setup page
+                 arrived too late to affect the already-completed /api/analyze request. -->
+            <div class="setup-controls" style="margin-top: 24px;">
+                <div class="setup-control">
+                    <label>Number of Questions</label>
+                    <div class="setup-options" id="question-count-options">
+                        <button class="setup-option" data-value="5">5</button>
+                        <button class="setup-option selected" data-value="10">10</button>
+                        <button class="setup-option" data-value="15">15</button>
+                        <button class="setup-option" data-value="20">20</button>
+                    </div>
+                </div>
+                <div class="setup-control">
+                    <label>Difficulty</label>
+                    <div class="setup-options" id="difficulty-options">
+                        <button class="setup-option selected" data-value="mixed">Mixed</button>
+                        <button class="setup-option" data-value="easy">Easy</button>
+                        <button class="setup-option" data-value="medium">Medium</button>
+                        <button class="setup-option" data-value="hard">Hard</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="upload-actions" style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top: 24px;">
                 <button id="analyze-btn" class="btn-primary" onclick="analyzePDF()" disabled style="padding: 14px 48px; font-size: 16px;">
                     Analyze PDF
                 </button>
+                <button id="summarize-btn" class="btn-secondary" onclick="summarizePDF()" disabled style="padding: 14px 48px; font-size: 16px;">
+                    📝 Summarize PDF
+                </button>
             </div>
 
-            <!-- Analyzing State -->
+            <!-- Analyzing / Summarizing State (shared) -->
             <div id="analyzing-state" class="analyzing-state" style="display:none; margin-top: 24px;">
                 <div class="spinner"></div>
-                <h3>AI is reading your PDF...</h3>
-                <p>Analyzing content and generating questions</p>
+                <h3 id="analyzing-title">AI is reading your PDF...</h3>
+                <p id="analyzing-subtitle">Analyzing content and generating questions</p>
                 <div class="steps" id="steps-container">
                     <!-- Steps will be rendered by JS -->
                 </div>
             </div>
 
             <!-- Info Box -->
-            <div style="margin-top: 24px; padding: 16px; background: #EFF6FF; border-radius: 12px; border: 1px solid #BFDBFE;">
-                <p style="font-size:14px; color:#1E40AF;">
-                    <strong>Tip:</strong> Add an <code>OPENAI_API_KEY</code> in your <code>.env</code> file for smarter AI-generated questions.
-                    Without it, the app uses a built-in local question generator.
-                </p>
-            </div>
+            
         </div>
     </div>
 
@@ -178,35 +200,16 @@
         <div class="container" style="max-width: 800px;">
             <button class="back-btn" onclick="confirmExit()">← Exit</button>
 
-            <!-- Quiz Setup -->
+            <!-- Quiz Setup: now just a confirmation screen, since count/difficulty
+                 were already chosen on the upload page before generation. -->
             <div id="quiz-setup" class="quiz-setup">
                 <div class="quiz-setup-header">
                     <h2>🎯 Your Quiz Is Ready!</h2>
-                    <p>Customize your learning experience</p>
+                    <p>Review your quiz details and start when ready</p>
                 </div>
                 <div class="quiz-setup-body">
                     <div class="setup-stats" id="setup-stats">
                         <!-- Stats rendered by JS -->
-                    </div>
-                    <div class="setup-controls">
-                        <div class="setup-control">
-                            <label>Number of Questions</label>
-                            <div class="setup-options" id="question-count-options">
-                                <button class="setup-option" data-value="5">5</button>
-                                <button class="setup-option selected" data-value="10">10</button>
-                                <button class="setup-option" data-value="15">15</button>
-                                <button class="setup-option" data-value="20">20</button>
-                            </div>
-                        </div>
-                        <div class="setup-control">
-                            <label>Difficulty</label>
-                            <div class="setup-options" id="difficulty-options">
-                                <button class="setup-option selected" data-value="mixed">Mixed</button>
-                                <button class="setup-option" data-value="easy">Easy</button>
-                                <button class="setup-option" data-value="medium">Medium</button>
-                                <button class="setup-option" data-value="hard">Hard</button>
-                            </div>
-                        </div>
                     </div>
                     <div style="margin-top: 24px; text-align: center;">
                         <button class="btn-primary" onclick="startQuiz()" style="padding: 14px 48px; font-size: 16px;">
@@ -246,6 +249,20 @@
         </div>
     </div>
 
+    <!-- ===== PAGE: SUMMARY ===== -->
+    <div id="page-summary" class="page">
+        <div class="container" style="max-width: 800px;">
+            <button class="back-btn" onclick="showPage('upload')">← Back</button>
+            <div class="page-header">
+                <h1>📝 PDF Summary</h1>
+                <p id="summary-doc-name">Uploaded PDF</p>
+            </div>
+            <div id="summary-content">
+                <!-- Summary rendered by JS -->
+            </div>
+        </div>
+    </div>
+
     <!-- ===== PAGE: RESULTS ===== -->
     <div id="page-results" class="page">
         <div class="container results-container">
@@ -260,7 +277,6 @@
             </div>
         </div>
     </div>
-
 
     <script src="script.js"></script>
 </body>

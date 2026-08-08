@@ -8,7 +8,7 @@ const state = {
     answers: [],
     questionCount: 10,
     difficulty: "mixed",
-    quizHistory: JSON.parse(localStorage.getItem("quizHistory") || "[]"),
+    summaryData: null,
 };
 
 const ANALYSIS_STEPS = [
@@ -18,10 +18,15 @@ const ANALYSIS_STEPS = [
     "Preparing your quiz",
 ];
 
+const SUMMARY_STEPS = [
+    "Reading PDF content",
+    "Identifying key topics",
+    "Summarizing content",
+];
+
 document.addEventListener("DOMContentLoaded", () => {
     setupUpload();
     setupSetupOptions();
-    renderDashboard();
 });
 
 function showPage(pageId) {
@@ -32,8 +37,6 @@ function showPage(pageId) {
 
     const page = document.getElementById(`page-${pageId}`);
     if (page) page.classList.add("active");
-
-    if (pageId === "dashboard") renderDashboard();
 }
 
 function setupUpload() {
@@ -82,6 +85,7 @@ function handleFileSelect(file) {
     document.getElementById("file-size").textContent = formatFileSize(file.size);
     document.getElementById("upload-area").classList.add("has-file");
     document.getElementById("analyze-btn").disabled = false;
+    document.getElementById("summarize-btn").disabled = false;
 }
 
 function removeFile() {
@@ -91,6 +95,7 @@ function removeFile() {
     document.getElementById("file-info").style.display = "none";
     document.getElementById("upload-area").classList.remove("has-file");
     document.getElementById("analyze-btn").disabled = true;
+    document.getElementById("summarize-btn").disabled = true;
     hideError();
 }
 
@@ -120,8 +125,11 @@ async function analyzePDF() {
 
     hideError();
     document.getElementById("analyze-btn").disabled = true;
+    document.getElementById("summarize-btn").disabled = true;
+    document.getElementById("analyzing-title").textContent = "AI is reading your PDF...";
+    document.getElementById("analyzing-subtitle").textContent = "Analyzing content and generating questions";
     document.getElementById("analyzing-state").style.display = "block";
-    renderAnalysisSteps(0);
+    renderSteps(ANALYSIS_STEPS, 0);
 
     const formData = new FormData();
     formData.append("file", state.selectedFile);
@@ -129,19 +137,19 @@ async function analyzePDF() {
     formData.append("difficulty", state.difficulty);
 
     try {
-        renderAnalysisSteps(1);
+        renderSteps(ANALYSIS_STEPS, 1);
         const response = await fetch(`${API_BASE}/api/analyze`, {
             method: "POST",
             body: formData,
         });
 
-        renderAnalysisSteps(2);
+        renderSteps(ANALYSIS_STEPS, 2);
         const data = await response.json();
         if (!response.ok) {
             throw new Error(data.detail || "Failed to analyze PDF.");
         }
 
-        renderAnalysisSteps(3);
+        renderSteps(ANALYSIS_STEPS, 3);
         await wait(500);
 
         state.quizData = data;
@@ -149,15 +157,54 @@ async function analyzePDF() {
         showQuizSetup(data);
     } catch (error) {
         showError(error.message || "Something went wrong while analyzing the PDF.");
-        document.getElementById("analyze-btn").disabled = false;
     } finally {
         document.getElementById("analyzing-state").style.display = "none";
+        document.getElementById("analyze-btn").disabled = false;
+        document.getElementById("summarize-btn").disabled = false;
     }
 }
 
-function renderAnalysisSteps(activeIndex) {
+async function summarizePDF() {
+    if (!state.selectedFile) return;
+
+    hideError();
+    document.getElementById("analyze-btn").disabled = true;
+    document.getElementById("summarize-btn").disabled = true;
+    document.getElementById("analyzing-title").textContent = "AI is reading your PDF...";
+    document.getElementById("analyzing-subtitle").textContent = "Summarizing content";
+    document.getElementById("analyzing-state").style.display = "block";
+    renderSteps(SUMMARY_STEPS, 0);
+
+    const formData = new FormData();
+    formData.append("file", state.selectedFile);
+
+    try {
+        renderSteps(SUMMARY_STEPS, 1);
+        const response = await fetch(`${API_BASE}/api/summarize`, {
+            method: "POST",
+            body: formData,
+        });
+
+        renderSteps(SUMMARY_STEPS, 2);
+        const data = await response.json();
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to summarize PDF.");
+        }
+
+        state.summaryData = data;
+        showSummary(data);
+    } catch (error) {
+        showError(error.message || "Something went wrong while summarizing the PDF.");
+    } finally {
+        document.getElementById("analyzing-state").style.display = "none";
+        document.getElementById("analyze-btn").disabled = false;
+        document.getElementById("summarize-btn").disabled = false;
+    }
+}
+
+function renderSteps(steps, activeIndex) {
     const container = document.getElementById("steps-container");
-    container.innerHTML = ANALYSIS_STEPS.map((label, index) => {
+    container.innerHTML = steps.map((label, index) => {
         const status = index < activeIndex ? "complete" : index === activeIndex ? "active" : "";
         const icon = index < activeIndex ? "✓" : index === activeIndex ? "●" : "○";
         return `
@@ -191,6 +238,60 @@ function showQuizSetup(data) {
         <div class="setup-stat orange">
             <div class="setup-stat-label">Mode</div>
             <div class="setup-stat-value" style="font-size:16px;">${data.ai_mode === "openai" ? "AI" : "Local"}</div>
+        </div>
+    `;
+}
+
+function showSummary(data) {
+    showPage("summary");
+    document.getElementById("summary-doc-name").textContent = data.document_name || "Uploaded PDF";
+
+    const summary = data.summary || { overview: "", key_points: [], definitions: [] };
+
+    document.getElementById("summary-content").innerHTML = `
+        <div class="setup-stats" style="margin-bottom: 24px;">
+            <div class="setup-stat blue">
+                <div class="setup-stat-label">Topics</div>
+                <div class="setup-stat-value">${(data.topics || []).length}</div>
+            </div>
+            <div class="setup-stat green">
+                <div class="setup-stat-label">Words Read</div>
+                <div class="setup-stat-value">${data.word_count || 0}</div>
+            </div>
+            <div class="setup-stat orange">
+                <div class="setup-stat-label">Mode</div>
+                <div class="setup-stat-value" style="font-size:16px;">${data.ai_mode === "openai" ? "AI" : "Local"}</div>
+            </div>
+        </div>
+
+        <div class="topics-list" style="margin-bottom: 24px;">
+            <h3>Overview</h3>
+            <p>${escapeHtml(summary.overview || "No overview available.")}</p>
+        </div>
+
+        ${summary.key_points && summary.key_points.length ? `
+        <div class="topics-list" style="margin-bottom: 24px;">
+            <h3>Key Points</h3>
+            <ul style="padding-left: 20px; line-height: 1.8;">
+                ${summary.key_points.map((point) => `<li>${escapeHtml(point)}</li>`).join("")}
+            </ul>
+        </div>` : ""}
+
+        ${summary.definitions && summary.definitions.length ? `
+        <div class="topics-list" style="margin-bottom: 24px;">
+            <h3>Key Terms</h3>
+            <div class="dashboard-grid">
+                ${summary.definitions.map((def) => `
+                    <div class="dashboard-card">
+                        <div class="dashboard-card-title">${escapeHtml(def.term)}</div>
+                        <p style="margin-top: 8px; color: #64748B; font-size: 14px;">${escapeHtml(def.definition)}</p>
+                    </div>
+                `).join("")}
+            </div>
+        </div>` : ""}
+
+        <div class="results-actions">
+            <button class="btn-primary" onclick="showPage('upload')">Upload New PDF</button>
         </div>
     `;
 }
@@ -255,7 +356,13 @@ function selectAnswer(selectedIndex) {
                 <span>${isCorrect ? "✅" : "❌"}</span>
                 <h3>${isCorrect ? "Correct!" : "Not quite"}</h3>
             </div>
-            <p class="feedback-explanation">${escapeHtml(question.explanation || "Review the PDF content to understand this topic better.")}</p>
+            <p class="feedback-explanation">${
+                escapeHtml(
+                    isCorrect
+                        ? (question.explanation || "Nice work.")
+                        : (question.misconception || "Review the PDF content to understand this topic better.")
+                )
+            }</p>
             <div class="feedback-actions">
                 <button class="btn-primary" onclick="nextQuestion()">
                     ${state.currentQuestion + 1 < state.questions.length ? "Next Question →" : "See Results"}
@@ -280,18 +387,12 @@ function showResults() {
     const score = Math.round((correctCount / total) * 100);
 
     const result = {
-        id: Date.now(),
         documentName: state.quizData?.document_name || "Uploaded PDF",
         score,
         correctCount,
         total,
         topics: state.quizData?.topics || [],
-        date: new Date().toISOString(),
     };
-
-    state.quizHistory.unshift(result);
-    state.quizHistory = state.quizHistory.slice(0, 10);
-    localStorage.setItem("quizHistory", JSON.stringify(state.quizHistory));
 
     showPage("results");
     document.getElementById("results-doc-name").textContent = result.documentName;
@@ -323,47 +424,6 @@ function showResults() {
         <div class="results-actions">
             <button class="btn-primary" onclick="startQuiz()">Retry Quiz</button>
             <button class="btn-secondary" onclick="showPage('upload')">Upload New PDF</button>
-            <button class="btn-secondary" onclick="showPage('dashboard')">View Dashboard</button>
-        </div>
-    `;
-}
-
-function renderDashboard() {
-    const container = document.getElementById("dashboard-content");
-    if (!state.quizHistory.length) {
-        container.innerHTML = `
-            <div class="dashboard-empty">
-                <div class="dashboard-empty-icon">📚</div>
-                <h3>No quizzes yet</h3>
-                <p>Upload a PDF to generate your first AI-powered quiz.</p>
-                <button class="btn-primary" onclick="showPage('upload')">Upload PDF</button>
-            </div>
-        `;
-        return;
-    }
-
-    container.innerHTML = `
-        <div class="dashboard-grid">
-            ${state.quizHistory
-                .map((item) => {
-                    const badgeClass = item.score >= 80 ? "good" : item.score >= 50 ? "ok" : "poor";
-                    return `
-                        <div class="dashboard-card">
-                            <div class="dashboard-card-header">
-                                <div class="dashboard-card-icon">📄</div>
-                                <div>
-                                    <div class="dashboard-card-title">${escapeHtml(item.documentName)}</div>
-                                    <div class="dashboard-card-meta">${formatDate(item.date)}</div>
-                                </div>
-                            </div>
-                            <div class="dashboard-card-score">
-                                <span>${item.correctCount}/${item.total} correct</span>
-                                <span class="dashboard-score-badge ${badgeClass}">${item.score}%</span>
-                            </div>
-                        </div>
-                    `;
-                })
-                .join("")}
         </div>
     `;
 }
@@ -388,10 +448,6 @@ function formatFileSize(bytes) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(value) {
-    return new Date(value).toLocaleString();
 }
 
 function escapeHtml(value) {

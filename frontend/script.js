@@ -380,11 +380,31 @@ function nextQuestion() {
     }
     showResults();
 }
-
 function showResults() {
     const correctCount = state.answers.filter((answer) => answer.isCorrect).length;
     const total = state.answers.length;
     const score = Math.round((correctCount / total) * 100);
+
+    const topicStats = {};
+    state.answers.forEach(({ isCorrect, question }) => {
+        const topic = question.topic || "General";
+        if (!topicStats[topic]) topicStats[topic] = { correct: 0, total: 0 };
+        topicStats[topic].total += 1;
+        if (isCorrect) topicStats[topic].correct += 1;
+    });
+
+    const topicBreakdown = Object.entries(topicStats).map(([topic, stats]) => {
+        const pct = Math.round((stats.correct / stats.total) * 100);
+        let strength;
+        if (pct >= 70) strength = "strong";
+        else if (pct < 50) strength = "weak";
+        else strength = "moderate";
+        return { topic, ...stats, pct, strength };
+    });
+
+    const strongTopics = topicBreakdown.filter((t) => t.strength === "strong").sort((a, b) => b.pct - a.pct);
+    const weakTopics = topicBreakdown.filter((t) => t.strength === "weak").sort((a, b) => a.pct - b.pct);
+    const moderateTopics = topicBreakdown.filter((t) => t.strength === "moderate");
 
     const result = {
         documentName: state.quizData?.document_name || "Uploaded PDF",
@@ -415,19 +435,49 @@ function showResults() {
                 <div class="result-stat-label">Total Questions</div>
             </div>
         </div>
-        <div class="topics-list">
-            <h3>Topics Covered</h3>
+
+        ${strongTopics.length ? `
+        <div class="topics-list" style="margin-bottom: 16px;">
+            <h3>💪 Strong Topics</h3>
             <div class="topic-tags">
-                ${result.topics.map((topic) => `<span class="topic-tag">${escapeHtml(topic)}</span>`).join("")}
+                ${strongTopics.map((t) => `
+                    <span class="topic-tag" style="background:#DCFCE7; color:#166534;">
+                        ${escapeHtml(t.topic)} — ${t.correct}/${t.total}
+                    </span>
+                `).join("")}
             </div>
-        </div>
+        </div>` : ""}
+
+        ${weakTopics.length ? `
+        <div class="topics-list" style="margin-bottom: 16px;">
+            <h3>⚠️ Needs Review</h3>
+            <div class="topic-tags">
+                ${weakTopics.map((t) => `
+                    <span class="topic-tag" style="background:#FEE2E2; color:#991B1B;">
+                        ${escapeHtml(t.topic)} — ${t.correct}/${t.total}
+                    </span>
+                `).join("")}
+            </div>
+        </div>` : ""}
+
+        ${moderateTopics.length ? `
+        <div class="topics-list" style="margin-bottom: 24px;">
+            <h3>Moderate</h3>
+            <div class="topic-tags">
+                ${moderateTopics.map((t) => `
+                    <span class="topic-tag">
+                        ${escapeHtml(t.topic)} — ${t.correct}/${t.total}
+                    </span>
+                `).join("")}
+            </div>
+        </div>` : ""}
+
         <div class="results-actions">
             <button class="btn-primary" onclick="startQuiz()">Retry Quiz</button>
             <button class="btn-secondary" onclick="showPage('upload')">Upload New PDF</button>
         </div>
     `;
 }
-
 function confirmExit() {
     if (confirm("Exit quiz? Your current progress will be lost.")) {
         showPage("upload");
